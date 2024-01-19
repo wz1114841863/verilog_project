@@ -29,4 +29,11 @@ module pong_game (
         vga_HS <= (counter_X[9: 4] == 0);
         vga_VS <= (counter_Y == 0);
     end
+
+    assign vga_h_sync = ~vga_HS;
+    assign vga_v_sync = ~vga_VS;
+
+    assign R = counter_Y[3] | (counter_X == 256);
+    assign G = (counter_X[5] ^ counter_X[6]) | (counter_X == 256);
+    assign B = counter_X[4] | (counter_X == 256);
 endmodule
