@@ -1,0 +1,130 @@
+// testbench for uart,
+// Uart 测试时采用自回环的测试方法，即 Uart 发送端接口与接收端接口相连，实现自发自收
+`timescale 1ns/1ns
+
+module test;
+    // clock and reset
+    reg clk;
+    always #10 clk = ~clk;
+
+    reg rst_n;
+    initial begin
+        rst_n = 0;
+        clk = 0;
+        # 4.5
+        rst_n = 1;
+    end
+
+    reg [7: 0] tx_data;
+    reg tx_data_valid;
+    wire [7: 0] rx_data;
+    wire rx_data_valid;
+    wire tx2rx, tx2rx_ready;
+
+    // test in loop
+    uart u_uart (
+        .clk(clk),
+        .rst_n(rst_n),
+        .rx(tx2rx),
+        .rx_ready(tx2rx_ready),
+        .rx_data(rx_data[7: 0]),
+        .rx_data_valid(rx_data_valid),
+
+        .tx_data(tx_data[7: 0]),
+        .tx_data_valid(tx_data_valid),
+        .tx(tx2rx),
+        .tx_ready(tx2rx_ready)
+    );
+
+    initial begin
+        tx_data = 0;
+        tx_data_valid = 0;
+        # 100;
+
+        // send data
+        wait (tx2rx_ready);
+        @(negedge clk);
+        tx_data = 8'h35;
+        tx_data_valid = 1;
+        @(negedge clk);
+        tx_data_valid = 0;
+        repeat(15) begin
+            @(negedge clk);
+        end
+
+        wait (tx2rx_ready);
+        @(negedge clk);
+        tx_data = 8'h18;
+        tx_data_valid = 1;
+        @(negedge clk);
+        tx_data_valid = 0;
+        repeat(15) begin
+            @(negedge clk);
+        end
+
+        wait (tx2rx_ready);
+        @(negedge clk);
+        tx_data = 8'ha6;
+        tx_data_valid = 1;
+        @(negedge clk);
+        tx_data_valid = 0;
+        repeat (15) begin
+            @(negedge clk);
+        end
+        # 100;
+    end
+
+    // receive parallel data
+    reg [1: 0] rx_data_valid_r;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            rx_data_valid_r <= 1'b0;
+        end else begin
+            rx_data_valid_r <= {rx_data_valid_r[0], rx_data_valid};
+        end
+    end
+
+    wire rx_data_valid_pos = rx_data_valid_r == 2'b01;
+
+    reg [7: 0] check_data;
+    integer check_num;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            check_data <= 1'b0;
+            check_num <= 1'b0;
+        end else if (rx_data_valid_pos == 1'b1) begin
+            check_data <= rx_data;
+            check_num <= check_num + 1'b1;
+        end
+    end
+
+    initial begin
+        # 1;
+        forever begin
+            @(negedge clk) ;
+            if (check_num == 1) begin
+                if (check_data !== 8'h35) begin
+                    $display("---III--- 1st data Failed: %h", check_data);
+                end
+            end
+            else if (check_num == 2) begin
+                if (check_data !== 8'h18) begin
+                    display("---III--- 2nd data Failed: %h", check_data);
+                end
+            end
+            else if (check_num == 3) begin
+                if (check_data !== 8'ha6) begin
+                    $display("---III--- 3rd data Failed: %h", check_data);
+                    $display("---III--- It's a FAILURE!!!");
+                end
+                else begin
+                    # 000000 ;
+                    $display("---III--- It's a SUCCESS!!!");
+                    $display("");
+                    $display("");
+                end
+                $finish ;
+            end
+        end
+    end
+endmodule

@@ -16,12 +16,12 @@ module uart_rx #(
     output reg rx_data_valid        // receive serial data is valid
 );
     // calc the clock cycle for baud rate
-    localparam CYCLE = CLK_FRR * 1000000 / BAUD_RATE;
+    localparam CYCLE = CLK_FRE * 1000000 / BAUD_RATE;
     // state machine code
     localparam S_IDLE     = 1;
     localparam S_START    = 2; // start bit
     localparam S_REC_BYTE = 3; // data bits
-    localparam S_SIOP     = 4; // stop bit
+    localparam S_STOP     = 4; // stop bit
     localparam S_DATA     = 5;
 
     reg [2: 0] state;
@@ -167,17 +167,17 @@ module uart_tx #(
     input wire rst_n,               // asynchronous reset input, low active
     input wire [7: 0] tx_data,      // data to send
     input wire tx_data_valid        // data ro be sent is valid
-    output wire tx_data_ready,       // send valid
-    output wire tx_pin,              // serial data output
+    output reg tx_data_ready,       // send valid
+    output reg tx_pin,              // serial data output
 );
 
     // calc the clock cycle for baud rate
-    localparam CYCLE = CLK_FRR * 1000000 / BAUD_RATE;
+    localparam CYCLE = CLK_FRE * 1000000 / BAUD_RATE;
     // state machine code
     localparam S_IDLE      = 1;
     localparam S_START     = 2; // start bit
     localparam S_SEND_BYTE = 3; // send bits
-    localparam S_SIOP      = 4; // stop bit
+    localparam S_STOP      = 4; // stop bit
 
     reg [2: 0] state;
     reg [2: 0] next_state;
@@ -201,12 +201,131 @@ module uart_tx #(
     always @(*) begin
         case(state)
             S_IDLE: begin
-                if (conditions) begin
-
+                if (tx_data_valid == 1'b1) begin
+                    next_state <= S_START;
                 end else begin
-
+                    next_state <= S_IDLE;
                 end
             end
+            S_START: begin
+                if (cycle_cnt == CYCLE - 1) begin
+                    next_state <= S_SEND_BYTE;
+                end else begin
+                    next_state <= S_START;
+                end
+            end
+            S_SEND_BYTE: begin
+                if (cycle_cnt == CYCLE - 1 && bit_cnt == 3'd7) begin
+                    next_state <= S_STOP;
+                end else begin
+                    next_state <= S_SEND_BYTE;
+                end
+            end
+            S_STOP: begin
+                if (cycle_cnt == CYCLE - 1) begin
+                    next_state <= S_IDLE;
+                end else begin
+                    next_state <= S_STOP;
+                end
+            end
+            default: next_state <= S_IDLE;
         endcase
     end
+
+    // 设置tx_data_ready
+    always @(posedge clk or negedge rst_n) begin
+        if (rst_n == 1'b0) begin
+            tx_data_ready <= 1'b0;
+        end else if (state == S_IDLE) begin
+            if (tx_data_valid == 1'b1) begin
+                tx_data_ready <= 1'b0;
+            end else begin
+                tx_data_ready <= 1'b1;
+            end
+        end else if (state == S_STOP && cycle_cnt == CYCLE - 1) begin
+            tx_data_ready <= 1'b1;
+        end
+    end
+
+    // 输出数据
+    always @(posedge clk or negedge rst_n) begin
+        if (rst_n == 1'b0) begin
+            tx_data_latch <= 8'd0;
+        end else if (state == S_IDLE && tx_data_valid == 1'b1)begin
+            tx_data_latch <= tx_data;
+        end
+    end
+
+    always @(posedge clk or negedge rst_n) begin
+        if (rst_n == 1'b0) begin
+            tx_reg <= 1'b1;
+        end else begin
+            case (state)
+                S_IDLE, S_STOP: begin
+                    tx_reg <= 1'b1;
+                end
+                S_START: begin
+                    tx_reg <= 1'b0;
+                end
+                S_SEND_BYTE: begin
+                    tx_reg <= tx_data_latch[bit_cnt];
+                end
+                default: tx_reg <= 1'b1;
+            endcase
+        end
+    end
+
+    // 计数
+    always @(posedge clk or negedge rst_n) begin
+        if (rst_n == 1'b0) begin
+            cycle_cnt <= 16'd0;
+        end else if ((state == S_SEND_BYTE && cycle_cnt == CYCLE - 1) || next_state != state) begin
+            cycle_cnt <= 16'd0;
+        end else begin
+            cycle_cnt <= cycle_cnt + 16'd1;
+        end
+    end
+endmodule
+
+module uart #(
+    parameters CLK_FRE = 50,
+    parameter BAUD_RATE = 115200
+) (
+    input wire clk,
+    input wire rst_n,
+
+    input wire rx,
+    input wire rx_ready,
+    output reg [7:0] rx_data,
+    output reg rx_data_valid,
+
+    input wire [7: 0] tx_data,
+    input wire tx_data_valid,
+    output reg tx,
+    output reg tx_ready,
+);
+    uart_rx #(
+        .CLK_FRE(CLK_FRE),
+        .BAUD_RATE(BAUD_RATE)
+    ) u_rx(
+        .clk(clk),
+        .rst_n(rst_n),
+        .rx_pin(rx),
+        .rx_data_ready(rx_data_ready),
+        .rx_data(rx_data),
+        .rx_data_valid(rx_data_valid)
+    );
+
+
+    uart_tx #(
+        .CLK_FRE(CLK_FRE),
+        .BAUD_RATE(BAUD_RATE)
+    ) u_tx (
+        .clk(clk),
+        .rst_n(rst_n),
+        .tx_data(tx_data),
+        .tx_data_valid(tx_data_valid),
+        .tx_pin(tx),
+        .tx_data_ready(tx_ready)
+    );
 endmodule
