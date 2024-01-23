@@ -18,11 +18,11 @@ module uart_rx #(
     // calc the clock cycle for baud rate
     localparam CYCLE = CLK_FRE * 1000000 / BAUD_RATE;
     // state machine code
-    localparam S_IDLE     = 1;
-    localparam S_START    = 2; // start bit
-    localparam S_REC_BYTE = 3; // data bits
-    localparam S_STOP     = 4; // stop bit
-    localparam S_DATA     = 5;
+    localparam S_IDLE      = 1;
+    localparam S_START     = 2; // start bit
+    localparam S_RECV_BYTE = 3; // data bits
+    localparam S_STOP      = 4; // stop bit
+    localparam S_DATA      = 5;
 
     reg [2: 0] state;
     reg [2: 0] next_state;
@@ -66,7 +66,7 @@ module uart_rx #(
             end
             S_START: begin
                 if (cycle_cnt == CYCLE - 1) begin
-                    next_state <= S_REC_BYTE;
+                    next_state <= S_RECV_BYTE;
                 end else begin
                     next_state <= S_START;
                 end
@@ -75,7 +75,7 @@ module uart_rx #(
                 if (cycle_cnt == CYCLE - 1 && bit_cnt == 3'd7) begin
                     next_state <= S_STOP;
                 end else begin
-                    next_state <= S_REC_BYTE;
+                    next_state <= S_RECV_BYTE;
                 end
             end
             S_STOP: begin
@@ -114,10 +114,10 @@ module uart_rx #(
     always @(posedge clk or negedge rst_n) begin
         if (rst_n == 1'b0) begin
             rx_bits <= 8'd0;
-        end else if (state == S_REC_BYTE && cycle_cnt == CYCLE/2 - 1) begin
+        end else if (state == S_RECV_BYTE && cycle_cnt == CYCLE/2 - 1) begin
             rx_bits[bit_cnt] <= rx_pin;
         end else begin
-            rx_bits <=
+            rx_bits <= rx_bits;
         end
     end
 
@@ -135,7 +135,7 @@ module uart_rx #(
     always @(posedge clk or negedge rst_n) begin
         if (rst_n == 1'b0) begin
             bit_cnt <= 3'd0;
-        end else if (state == S_REC_BYTE) begin
+        end else if (state == S_RECV_BYTE) begin
             if (cycle_cnt == CYCLE - 1) begin
                 bit_cnt <= bit_cnt + 3'd1;
             end else begin
@@ -149,10 +149,10 @@ module uart_rx #(
     always @(posedge clk or negedge rst_n) begin
         if (rst_n == 1'b0) begin
             cycle_cnt <= 16'd0;
-        end else if ((state == S_REC_BYTE && cycle_cnt == CYCLE - 1) || next_state != state) begin
+        end else if ((state == S_RECV_BYTE && cycle_cnt == CYCLE - 1) || next_state != state) begin
             cycle_cnt <= 16'd0;
         end else begin
-            cycle_cnt <= cycle + 16'd1;
+            cycle_cnt <= cycle_cnt + 16'd1;
         end
     end
 
@@ -166,9 +166,9 @@ module uart_tx #(
     input wire clk,                 // clock input
     input wire rst_n,               // asynchronous reset input, low active
     input wire [7: 0] tx_data,      // data to send
-    input wire tx_data_valid        // data ro be sent is valid
+    input wire tx_data_valid,       // data ro be sent is valid
     output reg tx_data_ready,       // send valid
-    output reg tx_pin,              // serial data output
+    output wire tx_pin               // serial data output
 );
 
     // calc the clock cycle for baud rate
@@ -276,7 +276,21 @@ module uart_tx #(
     end
 
     // 计数
-    always @(posedge clk or negedge rst_n) begin
+	 always@(posedge clk or negedge rst_n) begin
+			if(rst_n == 1'b0) begin
+					bit_cnt <= 3'd0;
+         end else if(state == S_SEND_BYTE) begin
+                if(cycle_cnt == CYCLE - 1) begin
+							bit_cnt <= bit_cnt + 3'd1;
+                end else begin
+							bit_cnt <= bit_cnt;
+					 end
+			end else begin
+				bit_cnt <= 3'd0;
+			end
+	end
+
+   always @(posedge clk or negedge rst_n) begin
         if (rst_n == 1'b0) begin
             cycle_cnt <= 16'd0;
         end else if ((state == S_SEND_BYTE && cycle_cnt == CYCLE - 1) || next_state != state) begin
@@ -288,21 +302,20 @@ module uart_tx #(
 endmodule
 
 module uart #(
-    parameters CLK_FRE = 50,
+    parameter CLK_FRE = 50,
     parameter BAUD_RATE = 115200
 ) (
-    input wire clk,
-    input wire rst_n,
+    input clk,
+    input rst_n,
+    input rx,
+    input rx_ready,
+    output [7:0] rx_data,
+    output rx_data_valid,
 
-    input wire rx,
-    input wire rx_ready,
-    output reg [7:0] rx_data,
-    output reg rx_data_valid,
-
-    input wire [7: 0] tx_data,
-    input wire tx_data_valid,
-    output reg tx,
-    output reg tx_ready,
+    input [7: 0] tx_data,
+    input tx_data_valid,
+    output tx,
+    output tx_ready
 );
     uart_rx #(
         .CLK_FRE(CLK_FRE),
@@ -311,7 +324,7 @@ module uart #(
         .clk(clk),
         .rst_n(rst_n),
         .rx_pin(rx),
-        .rx_data_ready(rx_data_ready),
+        .rx_data_ready(rx_ready),
         .rx_data(rx_data),
         .rx_data_valid(rx_data_valid)
     );

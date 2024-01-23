@@ -109,7 +109,7 @@ module test;
             end
             else if (check_num == 2) begin
                 if (check_data !== 8'h18) begin
-                    display("---III--- 2nd data Failed: %h", check_data);
+                    $display("---III--- 2nd data Failed: %h", check_data);
                 end
             end
             else if (check_num == 3) begin
