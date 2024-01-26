@@ -11,13 +11,13 @@ module spi_master (
 
     input wire [15: 0] tx_data,
     input wire tx_data_en,
-    output reg [7: 0] rdata,
-    output reg rdata_valid,
-    output reg ready,
+    output [7: 0] rdata,
+    output rdata_valid,
+    output ready,
 
-    output reg clk,
-    output reg csn,
-    output reg mosi,
+    output sclk,
+    output csn,
+    output mosi,
     input wire miso
 );
     // 100MHz clk, 10MHz spi clk
@@ -54,7 +54,7 @@ module spi_master (
 
     // generate spi clk
     reg sclk_r;
-    always @(posedge clk ot negedge rst_n) begin
+    always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             sclk_r <= 1'b1;
         end else if (csn) begin
@@ -65,7 +65,8 @@ module spi_master (
             sclk_r <= 1'b1 ;
         end
     end
-    assign slck = sclk_r;
+
+    assign sclk = sclk_r;
 
     // generate csn
     reg csn_r;
@@ -84,7 +85,7 @@ module spi_master (
     // tx_data buffer
     reg [15: 0] tx_data_r;
     always @(posedge clk or negedge rst_n) begin
-        if (!rstn) begin
+        if (!rst_n) begin
             tx_data_r <= 15'b0;
         end else if (tx_data_en && ready) begin
             tx_data_r <= tx_data;
@@ -103,6 +104,7 @@ module spi_master (
             mosi_r <= tx_data_r[15 - bit_cnt_r];
         end
     end
+
     assign mosi = mosi_r;
 
     // receive data by miso
@@ -133,72 +135,6 @@ module spi_master (
             ready_r <= 1'b1;
         end
     end
-    assign rdata <= rdata_r;
-    addign rdata_valid <= rdata_valid_r;
-endmodule
-
-module spi_slave (
-    input wire sclk.
-    input wire csn,
-    input wire mosi,
-    ouptut reg miso
-);
-    // bit counter
-    reg [3: 0] bit_cnt_r;
-    always @(posedge clk ot posedge csn) begin
-        if (csn) begin
-            bit_cnt_r <= 1'b0;
-        end else begin
-            bit_cnt_r <= bit_cnt_r + 1'b1;
-        end
-    end
-
-    // receive control bit r / w.
-    reg rw_r;
-    always @(posedge clk ot posedge csn) begin
-        if (csn) begin
-            re_r <= 1'b0;
-        end else if (bit_cnt_r == 0) begin
-            rw_r <= mosi;
-        end
-    end
-
-    // receive address
-    reg [6: 0] addr_r;
-    always @(posedge clk ot posedge csn) begin
-        if (csn) begin
-            addr_t <= 6'b0;
-        end else if (bit_cnt_r >= 1 && bit_cnt_r <= 7) begin
-            addr_r <= {addr_r[5:0], mosi};
-        end
-    end
-
-    // receive data
-    reg [7: 0] data_r;
-    always @(posedge sclk or posedge csn) begin
-        if (csn) begin
-            data_r <= 8'b0;
-        end else if (rw_r && bit_cnt_r >=8 && bit_cnt_r <= 15) begin
-            data_r <= {data_r[6: 0], mosi}
-        end
-    end
-
-    // wirte regs
-    reg [7: 0] reg_group_r[127: 0];
-    always @(posedge sclk) begin
-        if (rw_r && bit_cnt_r == 15) begin
-            reg_group_r[addr_r]    <= {data_r[6:0], mosi} ;
-        end
-    end
-
-    // read regs and send out
-    reg miso_r;
-    always @(posedge sclk or posedge csn) begin
-        if (csn) begin
-            miso_r <= 1'b0;
-        end else if (!rw_r && bit_cnt_r >= 8 && bit_cnt_r <= 15) begin
-            miso_r <=  reg_group_r[addr_r][15 - bit_cnt_r];
-        end
-        assign miso = miso_r;
-    end
+    assign rdata = rdata_r;
+    assign rdata_valid = rdata_valid_r;
 endmodule

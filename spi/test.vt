@@ -1,0 +1,115 @@
+`timescale 1ns/1ns
+
+module test;
+    reg clk_200mhz;
+    reg rst_n;
+    reg [15: 0] tx_data;
+    reg tx_data_en;
+    wire sclk, csn, mosi, miso;
+    wire [7: 0] rdata;
+    wire rdata_valid;
+    wire ready;
+
+    // clk and reset
+    inital begin
+        clk_200mhz = 0;
+        rst_n = 0;
+    end
+
+    always #(2.5) clk_200mhz  = ~clk_200mhz ;
+
+    //driver task
+    task spi_cmd ;
+        input [15: 0] data_send;
+        begin
+            wait(ready);
+            @(posedge clk_200mhz);
+            # 0.7;
+            tx_data = data_send;
+            tx_data_en = 1'b1 ;
+            @(posedge clk_200mhz);
+            # 0.7 ;
+            tx_data_en = 1'b0;
+            tx_data = 'b0;
+            wait(ready);
+        end
+    endtask // spi_rw
+
+    //==========================================
+    //driver
+    initial begin
+        tx_data = 16'b0;
+        tx_data_en = 1'b0;
+        //(1) wr address: 100-102
+        #133.7;
+        spi_cmd({1'b1, 7'd100, 8'hAA});
+        #501.3;
+        spi_cmd({1'b1, 7'd101, 8'h55});
+        #501.3;
+        spi_cmd({1'b1, 7'd102, 8'hA5});
+
+        //(2) rd address: 102-100
+        #2001.3;
+        spi_cmd({1'b0, 7'd102, 8'h0});
+        #501.3;
+        spi_cmd({1'b0, 7'd101, 8'h0});
+        #501.3;
+        spi_cmd({1'b0, 7'd100, 8'h0});
+    end
+
+    //finish
+    reg err_flag;
+    initial begin
+        err_flag = 0 ;
+        #100;
+        //1st read
+        @(posedge rdata_valid) ;
+        @(negedge clk_200mhz) ;
+        if (rdata != 8'ha5)  err_flag |= 1;
+        //2nd read
+        @(posedge rdata_valid) ;
+        @(negedge clk_200mhz) ;
+        if (rdata != 8'h55)  err_flag |= 1;
+        //3rd 3read
+        @(posedge rdata_valid) ;
+        @(negedge clk_200mhz) ;
+        if (rdata != 8'haa)  err_flag |= 1;
+
+        #13.7 ;
+        $display("-------------------------");
+        if (err_flag !== 0) begin
+            $display("Simulation Failed!");
+        end
+        else begin
+            $display("Simulation Succeed!");
+        end
+        $display();
+        $display();
+        #1000 ;
+        $finish ;
+    end
+
+    spi_master u_spi_master  (
+        .rst_n(rst_n),
+        .clk(clk_200mhz),
+        //parallel
+        .tx_data (tx_data),
+        .tx_data_en(tx_data_en),
+        .ready(ready),
+        //spi intf
+        .sclk(sclk),
+        .csn (csn),
+        .mosi(mosi),
+        .miso(miso),
+        .rdata(rdata),
+        .rdata_valid(rdata_valid)
+    );
+
+    spi_slave u_spi_slave  (
+        .sclk(sclk),
+        .csn(csn),
+        .mosi(mosi),
+        .miso(miso)
+    );
+
+endmodule;
